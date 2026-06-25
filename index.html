@@ -290,6 +290,7 @@
   .cam, .settings { position: relative; width: 100%; }
   .toolbtn .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--good); box-shadow: 0 0 6px rgba(79,208,138,0.6); }
   .toolbtn.off .dot { background: var(--muted); box-shadow: none; }
+  .status { cursor: pointer; }
   .status.hidden { display: none; }
   .btn {
     font-family: var(--disp); letter-spacing: 0.14em; text-transform: uppercase;
@@ -930,6 +931,12 @@ statusToggle.addEventListener("click", ()=>{
   const hidden = statusBox.classList.toggle("hidden");
   statusToggle.classList.toggle("off", hidden);
   statusToggle.setAttribute("aria-pressed", String(!hidden));
+});
+// press the box itself to collapse it; the toggle above the camera brings it back
+statusBox.addEventListener("click", ()=>{
+  statusBox.classList.add("hidden");
+  statusToggle.classList.add("off");
+  statusToggle.setAttribute("aria-pressed", "false");
 });
 
 // gimbal + zoom
