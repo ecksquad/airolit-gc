@@ -288,6 +288,9 @@
     width: 212px; z-index: 6; display: flex; flex-direction: column; gap: 6px;
   }
   .cam, .settings { position: relative; width: 100%; }
+  .toolbtn .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--good); box-shadow: 0 0 6px rgba(79,208,138,0.6); }
+  .toolbtn.off .dot { background: var(--muted); box-shadow: none; }
+  .status.hidden { display: none; }
   .btn {
     font-family: var(--disp); letter-spacing: 0.14em; text-transform: uppercase;
     background: var(--panel); color: var(--text);
@@ -427,6 +430,11 @@
     font-family: var(--disp); font-size: 11px; letter-spacing: 0.3em;
     color: var(--ember); text-transform: uppercase; margin-top: 5px;
   }
+  .batt-logo { display: flex; align-items: center; gap: 11px; margin-left: 16px; padding-left: 16px; border-left: 1px solid var(--panel-bd); }
+  .bbar { width: 72px; height: 12px; background: rgba(228,235,237,0.14); border-radius: 2px; overflow: hidden; }
+  .bbar i { display: block; height: 100%; width: 100%; background: var(--good); border-radius: 2px; transition: width .3s, background .3s; }
+  .bpct { font-family: var(--disp); font-weight: 600; font-size: 26px; color: #fff; line-height: 1; display: flex; align-items: baseline; }
+  .bpct .bv { font-size: 17px; color: var(--muted); margin-left: 9px; font-weight: 500; }
 
   /* ── Telemetry pullout (bottom-left) ──────────────────── */
   .telem { position: absolute; left: clamp(18px, 4vw, 64px); bottom: 24px; width: 344px; z-index: 6; }
@@ -486,6 +494,10 @@
   <div class="brand">
     <span class="mark">A</span>
     <span class="wm"><span class="b1">Airolit<sup>®</sup></span><span class="b2">Ground Control</span></span>
+    <span class="batt-logo">
+      <span class="bbar"><i id="logoBattFill"></i></span>
+      <span class="bpct"><span id="logoBattPct">100</span>%<span class="bv"><span id="logoBattV">25.0</span> V</span></span>
+    </span>
   </div>
 
   <!-- Artificial horizon -->
@@ -534,8 +546,6 @@
       <span class="k">Battery</span>
       <span class="v" style="display:flex;align-items:center;gap:8px"><span id="batt">100%</span><span class="battbar"><i id="battbar"></i></span></span>
     </div>
-    <div class="row"><span class="k">Voltage</span><span class="v" id="volt">25.2 V</span></div>
-    <div class="row"><span class="k">Link</span><span class="v" id="link">98%</span></div>
     <div class="row"><span class="k">Home</span><span class="v" id="dist">0 m</span></div>
     <div class="row"><span class="k">Time</span><span class="v" id="ftime">00:00</span></div>
   </div>
@@ -545,6 +555,7 @@
 
   <!-- Right-side dropdowns: Camera + Settings -->
   <div class="toolstack">
+  <button class="btn toolbtn" id="statusToggle" aria-pressed="true"><span>Mission box</span><span class="dot"></span></button>
   <div class="cam" id="cam">
     <button class="btn" id="camToggle" aria-expanded="false">
       <span>Camera</span><span class="chev">▼</span>
@@ -638,7 +649,7 @@
 const t = {
   pitch: 0, roll: 0, headingDeg: 0,
   altM: 0, groundSpeedMs: 0, vspeedMs: 0,
-  battPct: 100, battV: 25.2, satellites: 14, gpsFix: "3D",
+  battPct: 100, battV: 25.0, satellites: 14, gpsFix: "3D",
   mode: "POSITION", armed: false, linkPct: 98,
   lat: 57.6589, lon: 12.0103, distHomeM: 0, homeBearingDeg: 200,
   flightTimeS: 0,
@@ -734,6 +745,8 @@ buildVTape("spdTrack", 0, 45, 1, 5, SPD_PX, v=>v);
 const $ = id => document.getElementById(id);
 const horizon = $("horizon");
 const fmtTime = s => `${String(Math.floor(s/60)).padStart(2,"0")}:${String(Math.floor(s%60)).padStart(2,"0")}`;
+// battery %: 18.0 V (empty) → 0%,  25.0 V (full) → 100%
+const battPctFromV = v => Math.max(0, Math.min(100, (v - 18) / (25 - 18) * 100));
 
 function applyTelemetry(s){
   // attitude
@@ -767,14 +780,20 @@ function applyTelemetry(s){
   arm.textContent = s.armed ? "Armed" : "Disarmed";
   arm.className = "pill " + (s.armed ? "armed" : "disarmed");
   $("gps").textContent = `${s.gpsFix} · ${s.satellites}`;
-  $("batt").textContent = Math.round(s.battPct)+"%";
-  $("volt").textContent = s.battV.toFixed(1)+" V";
-  $("link").textContent = Math.round(s.linkPct)+"%";
+  // battery derived from voltage (18 V empty → 25 V full)
+  const pct = battPctFromV(s.battV);
+  const battColor = pct>60 ? "var(--good)" : pct>30 ? "var(--warn)" : "var(--crit)";
+  $("batt").textContent = Math.round(pct)+"%";
   $("dist").textContent = Math.round(s.distHomeM)+" m";
   $("ftime").textContent = fmtTime(s.flightTimeS);
   const bb = $("battbar");
-  bb.style.width = Math.max(0,Math.min(100,s.battPct))+"%";
-  bb.style.background = s.battPct>40 ? "var(--good)" : s.battPct>18 ? "var(--warn)" : "var(--crit)";
+  bb.style.width = pct+"%";
+  bb.style.background = battColor;
+  // battery by the logo
+  const lf = $("logoBattFill");
+  lf.style.width = pct+"%"; lf.style.background = battColor;
+  $("logoBattPct").textContent = Math.round(pct);
+  $("logoBattV").textContent = s.battV.toFixed(1);
 
   // telemetry pullout values
   const U = u => `<span class="u">${u}</span>`;
@@ -783,7 +802,7 @@ function applyTelemetry(s){
     alt: Math.round(s.altM)+U("m"), spd: s.groundSpeedMs.toFixed(1)+U("m/s"),
     hdg: String(Math.round(hdg)).padStart(3,"0")+U("°"),
     vs: (s.vspeedMs>=0?"+":"")+s.vspeedMs.toFixed(1)+U("m/s"),
-    batt: Math.round(s.battPct)+U("%"), volt: s.battV.toFixed(1)+U("V"),
+    batt: Math.round(pct)+U("%"), volt: s.battV.toFixed(1)+U("V"),
     sats: s.satellites, link: Math.round(s.linkPct)+U("%"),
     home: Math.round(s.distHomeM)+U("m"), time: fmtTime(s.flightTimeS),
   };
@@ -848,8 +867,7 @@ function simStep(now){
   t.groundSpeedMs = 14 + 3*Math.sin(phase*0.4);
   t.distHomeM = 180 + 120*Math.abs(Math.sin(phase*0.12));
   t.homeBearingDeg = (200 + 30*Math.sin(phase*0.1) + 360)%360;
-  t.battPct = Math.max(0, t.battPct - dt*0.18);
-  t.battV = 22.2 + (t.battPct/100)*3.6;
+  t.battV = 25.0;                               // sim: hold full (100%)
   t.linkPct = 96 + 3*Math.sin(phase*0.9);
   t.lat = 57.6589 + Math.sin(phase*0.05)*0.0009;
   t.lon = 12.0103 + Math.cos(phase*0.05)*0.0009;
@@ -904,6 +922,15 @@ $("rth").addEventListener("input", ()=>{ cfg.rthAlt = +$("rth").value; $("rthVal
 wireSeg("speedSeg", v=>{ cfg.speed = v;    log("speed → "+v); });
 wireSeg("posSeg",   v=>{ cfg.posMode = v;  log("position mode → "+v); });
 wireSeg("useSeg",   v=>{ cfg.droneUse = v; log("drone use → "+v); });
+
+// Mission box show/hide (toggle section above the camera)
+const statusBox = document.querySelector(".status");
+const statusToggle = $("statusToggle");
+statusToggle.addEventListener("click", ()=>{
+  const hidden = statusBox.classList.toggle("hidden");
+  statusToggle.classList.toggle("off", hidden);
+  statusToggle.setAttribute("aria-pressed", String(!hidden));
+});
 
 // gimbal + zoom
 const tilt=$("tilt"), zoom=$("zoom");
@@ -1013,7 +1040,7 @@ function goImmersive(){
   if (!document.fullscreenElement && el.requestFullscreen) el.requestFullscreen().catch(()=>{});
   if (screen.orientation && screen.orientation.lock) screen.orientation.lock("landscape").catch(()=>{});
 }
-window.addEventListener("pointerdown", function once(){ goImmersive(); window.removeEventListener("pointerdown", once); }, { once:true });
+window.addEventListener("pointerdown", ()=>{ if (!document.fullscreenElement) goImmersive(); });
 </script>
 </body>
 </html>
