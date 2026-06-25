@@ -1,0 +1,1019 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#07080a" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Airolit GC" />
+<link rel="manifest" href="manifest.webmanifest" />
+<title>Airolit Ground Control</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700&family=Barlow:wght@400;500;600&family=Poppins:wght@600;700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg:        #07080a;
+    --line:      rgba(228,235,237,0.9);
+    --line-soft: rgba(228,235,237,0.32);
+    --ember:     #ff5a1f;
+    --ember-dim: #b23f15;
+    --panel:     rgba(11,13,16,0.62);
+    --panel-bd:  rgba(228,235,237,0.12);
+    --text:      #e8eaed;
+    --muted:     #79828b;
+    --good:      #4fd08a;
+    --warn:      #f2b84b;
+    --crit:      #ff4d4d;
+
+    --disp: "Barlow Condensed", "Arial Narrow", system-ui, sans-serif;
+    --ui:   "Barlow", system-ui, sans-serif;
+    --brand:"Poppins", "Barlow", system-ui, sans-serif;
+    --logo: #c24a26;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--ui);
+    overflow: hidden;
+    user-select: none;
+    overscroll-behavior: none;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* ── Stage / camera feed backdrop ─────────────────────── */
+  .stage {
+    position: fixed;
+    inset: 0;
+    overflow: hidden;
+  }
+  .feed {
+    background:
+      radial-gradient(120% 90% at 50% 42%, #11161a 0%, #0a0d10 55%, #050608 100%);
+  }
+  .feed::before { /* faint scan/grid texture so it reads as a sensor feed */
+    content: "";
+    position: absolute; inset: 0;
+    background-image:
+      repeating-linear-gradient(0deg, rgba(255,255,255,0.018) 0 1px, transparent 1px 3px);
+    mix-blend-mode: screen;
+  }
+  .feed::after { /* vignette */
+    content: "";
+    position: absolute; inset: 0;
+    background: radial-gradient(110% 80% at 50% 50%, transparent 55%, rgba(0,0,0,0.55) 100%);
+  }
+  .nosignal {
+    position: absolute; inset: 0;
+    display: grid; place-content: center;
+    font-family: var(--disp);
+    letter-spacing: 0.5em;
+    font-size: clamp(11px, 1.4vw, 15px);
+    color: rgba(228,235,237,0.10);
+    text-transform: uppercase;
+  }
+
+  /* Corner reticle frame (signature motif) */
+  .frame span {
+    position: absolute;
+    width: 26px; height: 26px;
+    border: 1.5px solid var(--line-soft);
+  }
+  .frame .tl { top: 16px;    left: 16px;    border-right: 0; border-bottom: 0; }
+  .frame .tr { top: 16px;    right: 16px;   border-left: 0;  border-bottom: 0; }
+  .frame .bl { bottom: 16px; left: 16px;    border-right: 0; border-top: 0; }
+  .frame .br { bottom: 16px; right: 16px;   border-left: 0;  border-top: 0; }
+
+  /* ── Artificial horizon (HUD style — lines over feed) ─── */
+  .horizon-clip {
+    position: absolute;
+    left: 50%; top: 48%;
+    width: min(58vw, 760px);
+    height: min(46vh, 460px);
+    transform: translate(-50%, -50%);
+    overflow: hidden;
+    pointer-events: none;
+  }
+  .horizon {
+    position: absolute;
+    left: 50%; top: 50%;
+    width: 200%; height: 400%;
+    transform-origin: center;
+    will-change: transform;
+  }
+  .horizon .rung {
+    position: absolute;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    display: flex; align-items: center; gap: 8px;
+    color: var(--line);
+    font-family: var(--disp);
+    font-size: 13px;
+    letter-spacing: 0.08em;
+  }
+  .horizon .rung .bar { height: 1.5px; background: var(--line); }
+  .horizon .rung .num { width: 22px; text-align: center; opacity: 0.85; }
+  .horizon .rung.zero { gap: 0; }
+  .horizon .rung.zero .hbar {
+    position: relative; width: 150px; height: 2.5px; background: var(--line);
+    box-shadow: 0 0 10px rgba(228,235,237,0.5);
+  }
+  .horizon .rung.zero .hbar::after {
+    content: ""; position: absolute; top: 0; width: 2.5px; height: 10px; background: var(--line);
+  }
+  .horizon .rung.zero .hbar.left::after  { left: 0; }
+  .horizon .rung.zero .hbar.right::after { right: 0; }
+  .horizon .rung.zero .hgap { width: 70px; height: 2.5px; }
+
+  /* Fixed boresight reticle */
+  .boresight {
+    position: absolute; left: 50%; top: 48%;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+  }
+  .boresight svg { display: block; overflow: visible; }
+
+  /* Roll scale */
+  .rollscale {
+    position: absolute; left: 50%; top: 48%;
+    width: min(46vw, 560px); height: min(46vw, 560px);
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+  }
+
+  /* ── Vertical tapes ───────────────────────────────────── */
+  .tape {
+    position: absolute; top: 50%;
+    transform: translateY(-50%);
+    width: 88px; height: min(54vh, 460px);
+    overflow: hidden;
+    background: linear-gradient(90deg, rgba(7,8,10,0.0), rgba(7,8,10,0.35));
+    pointer-events: none;
+  }
+  .tape.left  { left: clamp(18px, 5vw, 92px); }
+  .tape.right { right: clamp(18px, 5vw, 92px); }
+  .tape .track {
+    position: absolute; left: 0; width: 100%;
+    will-change: transform;
+  }
+  .tape .tick {
+    position: absolute; left: 0; width: 100%;
+    display: flex; align-items: center; height: 0;
+  }
+  .tape.left  .tick { justify-content: flex-end;   padding-right: 6px; }
+  .tape.right .tick { justify-content: flex-start; padding-left: 6px; }
+  .tape .tick .m { width: 10px; height: 1.5px; background: var(--line-soft); }
+  .tape .tick.major .m { width: 18px; background: var(--line); }
+  .tape .tick .lbl {
+    font-family: var(--disp); font-size: 13px; color: var(--line);
+    opacity: 0.8; padding: 0 6px; font-variant-numeric: tabular-nums;
+  }
+  /* center readout box on a tape */
+  .readout {
+    position: absolute; top: 50%; transform: translateY(-50%);
+    background: rgba(7,8,10,0.82);
+    border: 1.5px solid var(--ember);
+    padding: 4px 8px;
+    font-family: var(--disp); font-weight: 600;
+    font-size: 24px; line-height: 1; letter-spacing: 0.02em;
+    color: #fff; font-variant-numeric: tabular-nums;
+    display: flex; align-items: baseline; gap: 4px;
+    pointer-events: none; z-index: 3;
+  }
+  .readout .u { font-size: 11px; color: var(--muted); font-weight: 500; }
+  .tape.left  .readout { right: -10px; }
+  .tape.right .readout { left: -10px; }
+  .tape-cap {
+    position: absolute; width: 100%; text-align: center;
+    font-family: var(--disp); font-size: 11px; letter-spacing: 0.22em;
+    color: var(--muted); text-transform: uppercase;
+  }
+  .tape.left  .tape-cap { left: clamp(18px,5vw,92px); }
+  .vsi {
+    position: absolute; right: clamp(18px,5vw,92px);
+    top: 50%; transform: translateY(-50%);
+    margin-right: 96px;
+    width: 5px; height: min(40vh, 300px);
+    background: var(--line-soft);
+  }
+  .vsi .needle {
+    position: absolute; left: -3px; width: 11px; height: 2px;
+    background: var(--ember); top: 50%;
+    box-shadow: 0 0 6px rgba(255,90,31,0.6);
+  }
+
+  /* ── Heading tape (top compass) ───────────────────────── */
+  .hdg-tape {
+    position: absolute; left: 50%; top: 20px;
+    transform: translateX(-50%);
+    width: min(46vw, 480px); height: 46px;
+    overflow: hidden;
+    -webkit-mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+            mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+    pointer-events: none;
+  }
+  .hdg-tape .track { position: absolute; top: 0; height: 100%; will-change: transform; }
+  .hdg-tape .t {
+    position: absolute; bottom: 0;
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    transform: translateX(-50%);
+  }
+  .hdg-tape .t .m { width: 1.5px; height: 9px; background: var(--line-soft); }
+  .hdg-tape .t.major .m { height: 14px; background: var(--line); }
+  .hdg-tape .t .lbl {
+    font-family: var(--disp); font-size: 13px; color: var(--line); opacity: 0.85;
+  }
+  .hdg-tape .t .lbl.card { color: var(--ember); font-weight: 600; }
+  .hdg-box {
+    position: absolute; left: 50%; top: 8px; transform: translateX(-50%);
+    z-index: 3; background: rgba(7,8,10,0.82);
+    border: 1.5px solid var(--ember); padding: 2px 9px;
+    font-family: var(--disp); font-weight: 600; font-size: 20px; color: #fff;
+    font-variant-numeric: tabular-nums;
+  }
+  .hdg-box::after {
+    content: ""; position: absolute; left: 50%; bottom: -7px;
+    transform: translateX(-50%);
+    border-left: 6px solid transparent; border-right: 6px solid transparent;
+    border-top: 6px solid var(--ember);
+  }
+
+  /* ── Status block (top-left) ──────────────────────────── */
+  .status {
+    position: absolute; top: 92px; left: clamp(18px, 4vw, 64px);
+    width: 196px;
+    transform: scale(1.3); transform-origin: top left;
+    background: var(--panel);
+    border: 1px solid var(--panel-bd);
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    padding: 12px 13px;
+  }
+  .status .row { display: flex; align-items: center; justify-content: space-between; padding: 5px 0; }
+  .status .row + .row { border-top: 1px solid rgba(228,235,237,0.07); }
+  .status .k { font-size: 10px; letter-spacing: 0.18em; color: var(--muted); text-transform: uppercase; }
+  .status .v { font-family: var(--disp); font-size: 16px; font-variant-numeric: tabular-nums; }
+  .pill {
+    font-family: var(--disp); font-size: 12px; letter-spacing: 0.16em;
+    padding: 2px 9px; border: 1.5px solid currentColor; text-transform: uppercase;
+  }
+  .pill.armed   { color: var(--crit); }
+  .pill.disarmed{ color: var(--good); }
+  .mode {
+    font-family: var(--disp); font-size: 20px; font-weight: 600;
+    letter-spacing: 0.05em; color: var(--ember); line-height: 1;
+    margin-bottom: 8px; text-transform: uppercase;
+  }
+  .battbar { width: 56px; height: 6px; background: rgba(228,235,237,0.14); position: relative; }
+  .battbar i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--good); }
+
+  /* ── REC / capture HUD indicator (top center-ish) ─────── */
+  .recind {
+    position: absolute; top: 70px; left: 50%; transform: translateX(-50%);
+    display: none; align-items: center; gap: 7px;
+    font-family: var(--disp); font-size: 14px; letter-spacing: 0.14em; color: #fff;
+  }
+  .recind.on { display: flex; }
+  .recind .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--crit); animation: blink 1s steps(2,start) infinite; }
+
+  /* ── Camera control dropout (top-right) ───────────────── */
+  .toolstack {
+    position: absolute; top: 56px; right: clamp(18px, 4vw, 64px);
+    width: 212px; z-index: 6; display: flex; flex-direction: column; gap: 6px;
+  }
+  .cam, .settings { position: relative; width: 100%; }
+  .btn {
+    font-family: var(--disp); letter-spacing: 0.14em; text-transform: uppercase;
+    background: var(--panel); color: var(--text);
+    border: 1px solid var(--panel-bd);
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    padding: 9px 12px; cursor: pointer; font-size: 14px;
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    width: 100%;
+  }
+  .btn:hover { border-color: var(--ember); }
+  .btn .chev { transition: transform 0.18s ease; color: var(--muted); }
+  .cam.open .btn .chev, .settings.open .btn .chev { transform: rotate(180deg); }
+  .cam-panel {
+    margin-top: 6px;
+    background: var(--panel);
+    border: 1px solid var(--panel-bd);
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    padding: 13px;
+    display: none;
+  }
+  .cam.open .cam-panel, .settings.open .cam-panel { display: block; }
+  .seg { display: flex; border: 1px solid var(--panel-bd); }
+  .seg button {
+    flex: 1; background: transparent; color: var(--muted); border: 0; cursor: pointer;
+    font-family: var(--disp); font-size: 13px; letter-spacing: 0.1em; padding: 7px 0;
+    text-transform: uppercase;
+  }
+  .seg button.active { background: var(--ember); color: #fff; }
+  .field { margin-top: 12px; }
+  .field .flbl { display: flex; justify-content: space-between; font-size: 10px; letter-spacing: 0.16em; color: var(--muted); text-transform: uppercase; margin-bottom: 6px; }
+  .field .flbl b { font-family: var(--disp); color: var(--text); font-weight: 600; font-size: 14px; }
+  input[type=range] { width: 100%; accent-color: var(--ember); cursor: pointer; }
+  .quick { display: flex; gap: 6px; margin-top: 8px; }
+  .quick button {
+    flex: 1; background: transparent; border: 1px solid var(--panel-bd); color: var(--text);
+    font-family: var(--disp); font-size: 12px; letter-spacing: 0.08em; padding: 6px 0; cursor: pointer;
+    text-transform: uppercase;
+  }
+  .quick button:hover { border-color: var(--ember); }
+  .cam-actions { display: flex; gap: 6px; margin-top: 13px; }
+  .cam-actions button {
+    flex: 1; font-family: var(--disp); font-size: 13px; letter-spacing: 0.1em;
+    padding: 9px 0; cursor: pointer; text-transform: uppercase;
+    background: transparent; border: 1.5px solid var(--panel-bd); color: var(--text);
+  }
+  .cam-actions .rec { border-color: var(--crit); color: var(--crit); }
+  .cam-actions .rec.recording { background: var(--crit); color: #fff; }
+  .cam-actions .cap:hover { border-color: var(--ember); }
+
+  /* ── Swappable views (camera feed ⇄ map) ──────────────── */
+  .view { position: absolute; }
+  .view.as-main { inset: 0; z-index: 0; }
+  .view.as-pip {
+    left: 50%; bottom: 20px; transform: translateX(-50%);
+    width: 232px; height: 150px; z-index: 7;
+    border: 1px solid var(--panel-bd); overflow: hidden; cursor: pointer;
+    box-shadow: 0 8px 28px rgba(0,0,0,0.55);
+  }
+  .view.as-pip:hover { border-color: var(--ember); }
+  .view.map { background: #0a0d10; }
+  .view .pip-label {
+    display: none; position: absolute; top: 7px; left: 8px; z-index: 2;
+    font-family: var(--disp); font-size: 11px; letter-spacing: 0.18em;
+    color: var(--text); background: rgba(7,8,10,0.7); padding: 1px 7px;
+    text-transform: uppercase; pointer-events: none;
+  }
+  .view.as-pip .pip-label { display: block; }
+  .view.as-pip .nosignal { font-size: 9px; letter-spacing: 0.28em; }
+
+  /* ── Drop control (bottom right) ──────────────────────── */
+  .drop {
+    position: absolute; right: clamp(18px, 4vw, 64px); bottom: 64px;
+    width: 188px; z-index: 6;
+    background: var(--panel); border: 1px solid var(--panel-bd);
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    padding: 12px;
+  }
+  .drop .dhead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .drop .dhead .k { font-size: 10px; letter-spacing: 0.2em; color: var(--muted); text-transform: uppercase; }
+  .drop .payload {
+    font-family: var(--disp); font-size: 13px; letter-spacing: 0.12em; text-transform: uppercase;
+  }
+  .drop .payload.loaded   { color: var(--good); }
+  .drop .payload.released { color: var(--muted); }
+  .drop-btn {
+    position: relative; width: 100%; cursor: pointer; overflow: hidden;
+    font-family: var(--disp); font-weight: 600; font-size: 18px;
+    letter-spacing: 0.16em; text-transform: uppercase;
+    padding: 14px 0; border: 1.5px solid; background: transparent;
+  }
+  .drop-btn .label { position: relative; z-index: 2; display: flex; align-items: center; justify-content: center; gap: 8px; }
+  .drop-btn.idle    { color: var(--warn);  border-color: var(--warn); }
+  .drop-btn.armed   { color: #fff;         border-color: var(--crit); }
+  .drop-btn.armed .label { animation: pulse 1.1s ease-in-out infinite; }
+  .drop-btn .timer { /* shrinking arm window */
+    position: absolute; left: 0; top: 0; bottom: 0; z-index: 1;
+    background: rgba(255,77,77,0.22); width: 0%;
+  }
+  .drop-btn .hold { /* stage-2 press-and-hold progress */
+    position: absolute; left: 0; top: 0; bottom: 0; z-index: 1;
+    background: var(--crit); opacity: 0.5; width: 0%;
+  }
+  .drop-btn:disabled { color: var(--muted); border-color: var(--panel-bd); cursor: default; }
+  .reload {
+    width: 100%; margin-top: 7px; background: transparent;
+    border: 1px solid var(--panel-bd); color: var(--muted);
+    font-family: var(--disp); font-size: 12px; letter-spacing: 0.14em;
+    padding: 6px 0; cursor: pointer; text-transform: uppercase;
+  }
+  .reload:hover { border-color: var(--ember); color: var(--text); }
+
+  /* drop confirmation flash */
+  .flash {
+    position: fixed; inset: 0; background: rgba(255,90,31,0.0);
+    pointer-events: none; z-index: 20;
+  }
+  .flash.go { animation: flash 0.5s ease-out; }
+
+  /* ── Brand lockup (top-left) ──────────────────────────── */
+  .brand {
+    position: absolute; top: 18px; left: clamp(18px, 4vw, 64px);
+    display: flex; align-items: center; gap: 11px; z-index: 5;
+    pointer-events: none;
+  }
+  .brand .mark {
+    width: 36px; height: 36px; background: var(--logo); border-radius: 2px;
+    display: grid; place-items: center; line-height: 1;
+    font-family: var(--brand); font-weight: 700; font-size: 25px; color: #fff;
+  }
+  .brand .wm { display: flex; flex-direction: column; line-height: 1; }
+  .brand .b1 {
+    font-family: var(--brand); font-weight: 700; font-size: 22px;
+    letter-spacing: -0.005em; color: #fff;
+  }
+  .brand .b1 sup { font-size: 9px; font-weight: 600; margin-left: 1px; color: var(--muted); }
+  .brand .b2 {
+    font-family: var(--disp); font-size: 11px; letter-spacing: 0.3em;
+    color: var(--ember); text-transform: uppercase; margin-top: 5px;
+  }
+
+  /* ── Telemetry pullout (bottom-left) ──────────────────── */
+  .telem { position: absolute; left: clamp(18px, 4vw, 64px); bottom: 24px; width: 344px; z-index: 6; }
+  .telem-panel {
+    display: none; margin-bottom: 6px;
+    grid-template-columns: 1fr 1fr; gap: 1px;
+    background: var(--panel-bd); border: 1px solid var(--panel-bd);
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  }
+  .telem.open .telem-panel { display: grid; }
+  .telem.open .btn .chev { transform: rotate(180deg); }
+  .tcell { background: rgba(8,10,13,0.92); padding: 10px 13px; }
+  .tcell .tk { font-size: 10px; letter-spacing: 0.18em; color: var(--muted); text-transform: uppercase; }
+  .tcell .tv {
+    font-family: var(--disp); font-weight: 600; font-size: 28px; line-height: 1.05;
+    font-variant-numeric: tabular-nums; color: #fff; margin-top: 2px;
+  }
+  .tcell .tv .u { font-size: 12px; color: var(--muted); margin-left: 3px; font-weight: 500; }
+
+  @keyframes blink   { 50% { opacity: 0.25; } }
+  @keyframes pulse   { 50% { opacity: 0.45; } }
+  @keyframes flash   { 0% { background: rgba(255,90,31,0.45); } 100% { background: rgba(255,90,31,0); } }
+
+  @media (prefers-reduced-motion: reduce) {
+    .recind .dot, .drop-btn.armed .label { animation: none; }
+  }
+
+  :focus-visible { outline: 2px solid var(--ember); outline-offset: 2px; }
+
+  @media (max-width: 720px) {
+    .status { width: 150px; top: 52px; }
+    .toolstack { width: 168px; }
+    .drop { width: 158px; }
+    .horizon-clip { width: 84vw; }
+  }
+</style>
+</head>
+<body>
+<div class="stage">
+  <!-- Swappable views: camera feed ⇄ map. Tap the small one to swap. -->
+  <div class="view feed as-main" id="feedView">
+    <div class="nosignal">SIM FEED · NO CAMERA</div>
+    <span class="pip-label">CAM ⇄</span>
+  </div>
+  <div class="view map as-pip" id="mapView">
+    <svg id="mapSvg" viewBox="0 0 200 200" preserveAspectRatio="xMidYMid slice" width="100%" height="100%">
+      <rect width="200" height="200" fill="#0a0d10"></rect>
+      <g id="mapGrid"></g>
+      <polyline id="mapTrail" fill="none" stroke="rgba(255,90,31,0.55)" stroke-width="1.5" stroke-linejoin="round"></polyline>
+      <g id="mapHome"><circle r="4.5" fill="none" stroke="#4fd08a" stroke-width="1.4"></circle><circle r="1.4" fill="#4fd08a"></circle></g>
+      <g id="mapVeh" transform="translate(100,100)"><polygon points="0,-7 5.5,6.5 0,3.5 -5.5,6.5" fill="#ff5a1f" stroke="#fff" stroke-width="0.6"></polygon></g>
+      <text x="8" y="15" fill="rgba(228,235,237,0.55)" font-family="Barlow Condensed" font-size="12">N</text>
+    </svg>
+    <span class="pip-label">MAP ⇄</span>
+  </div>
+  <div class="frame"><span class="tl"></span><span class="tr"></span><span class="bl"></span><span class="br"></span></div>
+  <div class="brand">
+    <span class="mark">A</span>
+    <span class="wm"><span class="b1">Airolit<sup>®</sup></span><span class="b2">Ground Control</span></span>
+  </div>
+
+  <!-- Artificial horizon -->
+  <div class="horizon-clip"><div class="horizon" id="horizon"></div></div>
+  <div class="rollscale">
+    <svg viewBox="-100 -100 200 200" width="100%" height="100%">
+      <g fill="none" stroke="rgba(228,235,237,0.5)" stroke-width="1.5">
+        <!-- roll ticks at -60..60 -->
+        <g id="rollticks"></g>
+      </g>
+      <polygon id="rollptr" points="0,-74 -5,-84 5,-84" fill="#ff5a1f"/>
+    </svg>
+  </div>
+  <div class="boresight">
+    <svg width="160" height="40" viewBox="-80 -20 160 40">
+      <path d="M -62 0 L -22 0 L -10 11" fill="none" stroke="#ff5a1f" stroke-width="2.5"/>
+      <path d="M 62 0 L 22 0 L 10 11"  fill="none" stroke="#ff5a1f" stroke-width="2.5"/>
+      <circle cx="0" cy="0" r="2.5" fill="#ff5a1f"/>
+    </svg>
+  </div>
+
+  <!-- Heading tape -->
+  <div class="hdg-box"><span id="hdgVal">000</span></div>
+  <div class="hdg-tape"><div class="track" id="hdgTrack"></div></div>
+
+  <!-- Speed tape (left) -->
+  <div class="tape left">
+    <div class="track" id="spdTrack"></div>
+    <div class="readout"><span id="spdVal">0</span><span class="u">m/s</span></div>
+  </div>
+  <div class="tape-cap" style="top:calc(50% - min(27vh,230px) - 16px)">GND SPD</div>
+
+  <!-- Altitude tape (right) + VSI -->
+  <div class="tape right">
+    <div class="track" id="altTrack"></div>
+    <div class="readout"><span id="altVal">0</span><span class="u">m</span></div>
+  </div>
+  <div class="vsi"><div class="needle" id="vsiNeedle"></div></div>
+
+  <!-- Status block -->
+  <div class="status">
+    <div class="mode" id="mode">POSITION</div>
+    <div class="row"><span class="k">State</span><span class="pill disarmed" id="armState">Disarmed</span></div>
+    <div class="row"><span class="k">GPS</span><span class="v" id="gps">3D · 14</span></div>
+    <div class="row">
+      <span class="k">Battery</span>
+      <span class="v" style="display:flex;align-items:center;gap:8px"><span id="batt">100%</span><span class="battbar"><i id="battbar"></i></span></span>
+    </div>
+    <div class="row"><span class="k">Voltage</span><span class="v" id="volt">25.2 V</span></div>
+    <div class="row"><span class="k">Link</span><span class="v" id="link">98%</span></div>
+    <div class="row"><span class="k">Home</span><span class="v" id="dist">0 m</span></div>
+    <div class="row"><span class="k">Time</span><span class="v" id="ftime">00:00</span></div>
+  </div>
+
+  <!-- REC indicator -->
+  <div class="recind" id="recind"><span class="dot"></span><span>REC</span><span id="rectime">00:00</span></div>
+
+  <!-- Right-side dropdowns: Camera + Settings -->
+  <div class="toolstack">
+  <div class="cam" id="cam">
+    <button class="btn" id="camToggle" aria-expanded="false">
+      <span>Camera</span><span class="chev">▼</span>
+    </button>
+    <div class="cam-panel">
+      <div class="seg" id="sensorSeg">
+        <button data-v="EO" class="active">EO</button>
+        <button data-v="IR">IR</button>
+      </div>
+      <div class="field">
+        <div class="flbl"><span>Gimbal tilt</span><b><span id="tiltVal">0</span>°</b></div>
+        <input type="range" id="tilt" min="-90" max="30" value="0" />
+        <div class="quick">
+          <button data-tilt="-90">Down</button>
+          <button data-tilt="0">Level</button>
+          <button data-tilt="30">Up</button>
+        </div>
+      </div>
+      <div class="field">
+        <div class="flbl"><span>Zoom</span><b><span id="zoomVal">1.0</span>×</b></div>
+        <input type="range" id="zoom" min="10" max="120" value="10" />
+      </div>
+      <div class="seg" id="modeSeg" style="margin-top:13px">
+        <button data-v="photo" class="active">Photo</button>
+        <button data-v="video">Video</button>
+      </div>
+      <div class="cam-actions">
+        <button class="cap" id="capBtn">Capture</button>
+        <button class="rec" id="recBtn">● Record</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="settings" id="settings">
+    <button class="btn" id="setToggle" aria-expanded="false"><span>Settings</span><span class="chev">▼</span></button>
+    <div class="cam-panel">
+      <div class="field">
+        <div class="flbl"><span>RTH height</span><b><span id="rthVal">120</span> m</b></div>
+        <input type="range" id="rth" min="10" max="1000" step="10" value="120" />
+      </div>
+      <div class="field">
+        <div class="flbl"><span>Speed</span></div>
+        <div class="seg" id="speedSeg">
+          <button data-v="slow">Slow</button>
+          <button data-v="normal" class="active">Normal</button>
+          <button data-v="max">Max</button>
+        </div>
+      </div>
+      <div class="field">
+        <div class="flbl"><span>Position mode</span></div>
+        <div class="seg" id="posSeg">
+          <button data-v="gps" class="active">GPS</button>
+          <button data-v="camera">Cam feed</button>
+        </div>
+      </div>
+      <div class="field">
+        <div class="flbl"><span>Drone use</span></div>
+        <div class="seg" id="useSeg">
+          <button data-v="free" class="active">Free flight</button>
+          <button data-v="tethered">Tethered</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  </div>
+
+  <!-- Drop control -->
+  <div class="drop">
+    <div class="dhead"><span class="k">Payload</span><span class="payload loaded" id="payload">Loaded</span></div>
+    <button class="drop-btn idle" id="dropBtn"><span class="timer" id="dropTimer"></span><span class="hold" id="dropHold"></span><span class="label" id="dropLabel">Arm drop</span></button>
+    <button class="reload" id="reloadBtn" style="display:none">Reset · reload payload</button>
+  </div>
+
+  <div class="flash" id="flash"></div>
+
+  <!-- Telemetry pullout -->
+  <div class="telem" id="telem">
+    <div class="telem-panel" id="telemPanel"></div>
+    <button class="btn" id="telemToggle" aria-expanded="false"><span>Telemetry</span><span class="chev">▲</span></button>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+/* ─────────────────────────────────────────────────────────
+   TELEMETRY STATE
+   The HUD renders entirely from this object. A built-in flight
+   sim mutates it so everything is alive with nothing connected.
+   ───────────────────────────────────────────────────────── */
+const t = {
+  pitch: 0, roll: 0, headingDeg: 0,
+  altM: 0, groundSpeedMs: 0, vspeedMs: 0,
+  battPct: 100, battV: 25.2, satellites: 14, gpsFix: "3D",
+  mode: "POSITION", armed: false, linkPct: 98,
+  lat: 57.6589, lon: 12.0103, distHomeM: 0, homeBearingDeg: 200,
+  flightTimeS: 0,
+};
+
+/* ── Build static scales once ─────────────────────────── */
+const HDG_PX = 4.6;          // px per degree, heading tape
+const ALT_PX = 2.6;          // px per metre, alt tape (covers 0..700)
+const SPD_PX = 13;           // px per m/s, speed tape (covers 0..45)
+const PITCH_PX = 6;          // px per degree, horizon ladder
+const cardinals = {0:"N",90:"E",180:"S",270:"W"};
+
+(function buildHorizon(){
+  const h = document.getElementById("horizon");
+  // single centre horizon bar (gapped, with downturned end caps)
+  const z = document.createElement("div");
+  z.className = "rung zero"; z.dataset.deg = 0;
+  z.style.top = "50%";
+  z.innerHTML = `<span class="hbar left"></span><span class="hgap"></span><span class="hbar right"></span>`;
+  h.appendChild(z);
+})();
+
+(function buildRoll(){
+  const g = document.getElementById("rollticks");
+  [-60,-45,-30,-20,-10,0,10,20,30,45,60].forEach(a=>{
+    const long = a%30===0 || a===0;
+    const r1 = 78, r2 = long ? 68 : 73;
+    const rad = (a-90)*Math.PI/180;
+    const x1=Math.cos(rad)*r1, y1=Math.sin(rad)*r1;
+    const x2=Math.cos(rad)*r2, y2=Math.sin(rad)*r2;
+    g.innerHTML += `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}"/>`;
+  });
+})();
+
+(function buildHdg(){
+  const tr = document.getElementById("hdgTrack");
+  for (let d=0; d<=720; d+=5){
+    const dd = ((d%360)+360)%360;
+    const major = dd%10===0;
+    const el = document.createElement("div");
+    el.className = "t"+(major?" major":"");
+    el.style.left = (d*HDG_PX)+"px";
+    let lbl = "";
+    if (dd%30===0){ lbl = cardinals[dd] ?? String(dd/10).padStart(2,"0"); }
+    el.innerHTML = (lbl?`<div class="lbl ${cardinals[dd]?"card":""}">${lbl}</div>`:`<div style="height:14px"></div>`)+`<span class="m"></span>`;
+    tr.appendChild(el);
+  }
+})();
+
+function buildVTape(id, min, max, step, majorEvery, px, fmt){
+  const tr = document.getElementById(id);
+  const H = tr.parentElement.clientHeight;
+  for (let v=min; v<=max; v+=step){
+    const major = v%majorEvery===0;
+    const el = document.createElement("div");
+    el.className = "tick"+(major?" major":"");
+    el.style.top = (-v*px)+"px";   // value increases upward
+    el.innerHTML = major ? `<span class="lbl">${fmt(v)}</span><span class="m"></span>` : `<span class="m"></span>`;
+    tr.appendChild(el);
+  }
+  return H;
+}
+buildVTape("altTrack", 0, 700, 5, 20, ALT_PX, v=>v);
+buildVTape("spdTrack", 0, 45, 1, 5, SPD_PX, v=>v);
+
+(function buildMap(){
+  let s = "";
+  for (let i=-8; i<=16; i++){ const p = i*25;
+    s += `<line x1="${p}" y1="-200" x2="${p}" y2="400"></line>`;
+    s += `<line x1="-200" y1="${p}" x2="400" y2="${p}"></line>`;
+  }
+  const g = document.getElementById("mapGrid");
+  g.setAttribute("stroke", "rgba(228,235,237,0.07)");
+  g.setAttribute("stroke-width", "1");
+  g.innerHTML = s;
+})();
+
+(function buildTelem(){
+  const fields = [
+    ["lat","Latitude"],["lon","Longitude"],
+    ["alt","Altitude"],["spd","Gnd speed"],
+    ["hdg","Heading"],["vs","Vert speed"],
+    ["batt","Battery"],["volt","Voltage"],
+    ["sats","GPS sats"],["link","Link"],
+    ["home","Dist home"],["time","Flight time"],
+  ];
+  document.getElementById("telemPanel").innerHTML = fields.map(
+    ([f,k])=>`<div class="tcell"><div class="tk">${k}</div><div class="tv" data-f="${f}">—</div></div>`
+  ).join("");
+})();
+
+/* ── Render: state -> DOM ─────────────────────────────── */
+const $ = id => document.getElementById(id);
+const horizon = $("horizon");
+const fmtTime = s => `${String(Math.floor(s/60)).padStart(2,"0")}:${String(Math.floor(s%60)).padStart(2,"0")}`;
+
+function applyTelemetry(s){
+  // attitude
+  horizon.style.transform =
+    `translate(-50%,-50%) rotate(${s.roll}deg) translateY(${s.pitch*PITCH_PX}px)`;
+  $("rollptr").parentElement && ($("rollscale")); // noop guard
+  document.querySelector(".rollscale svg").style.transform = ""; // ptr fixed; scale fixed
+  $("rollptr").setAttribute("transform", `rotate(${s.roll})`);
+
+  // heading tape + box + map
+  const hdg = ((s.headingDeg%360)+360)%360;
+  $("hdgTrack").style.transform = `translateX(${(-hdg*HDG_PX) + ($("hdgTrack").parentElement.clientWidth/2)}px)`;
+  $("hdgVal").textContent = String(Math.round(hdg)).padStart(3,"0");
+  renderMap(s, hdg);
+
+  // tapes
+  const altH = $("altTrack").parentElement.clientHeight/2;
+  const spdH = $("spdTrack").parentElement.clientHeight/2;
+  $("altTrack").style.transform = `translateY(${s.altM*ALT_PX + altH}px)`;
+  $("spdTrack").style.transform = `translateY(${s.groundSpeedMs*SPD_PX + spdH}px)`;
+  $("altVal").textContent = Math.round(s.altM);
+  $("spdVal").textContent = s.groundSpeedMs.toFixed(1);
+
+  // vsi
+  const vclamp = Math.max(-5, Math.min(5, s.vspeedMs));
+  $("vsiNeedle").style.top = `calc(50% - ${vclamp*9}px)`;
+
+  // status
+  $("mode").textContent = s.mode;
+  const arm = $("armState");
+  arm.textContent = s.armed ? "Armed" : "Disarmed";
+  arm.className = "pill " + (s.armed ? "armed" : "disarmed");
+  $("gps").textContent = `${s.gpsFix} · ${s.satellites}`;
+  $("batt").textContent = Math.round(s.battPct)+"%";
+  $("volt").textContent = s.battV.toFixed(1)+" V";
+  $("link").textContent = Math.round(s.linkPct)+"%";
+  $("dist").textContent = Math.round(s.distHomeM)+" m";
+  $("ftime").textContent = fmtTime(s.flightTimeS);
+  const bb = $("battbar");
+  bb.style.width = Math.max(0,Math.min(100,s.battPct))+"%";
+  bb.style.background = s.battPct>40 ? "var(--good)" : s.battPct>18 ? "var(--warn)" : "var(--crit)";
+
+  // telemetry pullout values
+  const U = u => `<span class="u">${u}</span>`;
+  const tvals = {
+    lat: s.lat.toFixed(5), lon: s.lon.toFixed(5),
+    alt: Math.round(s.altM)+U("m"), spd: s.groundSpeedMs.toFixed(1)+U("m/s"),
+    hdg: String(Math.round(hdg)).padStart(3,"0")+U("°"),
+    vs: (s.vspeedMs>=0?"+":"")+s.vspeedMs.toFixed(1)+U("m/s"),
+    batt: Math.round(s.battPct)+U("%"), volt: s.battV.toFixed(1)+U("V"),
+    sats: s.satellites, link: Math.round(s.linkPct)+U("%"),
+    home: Math.round(s.distHomeM)+U("m"), time: fmtTime(s.flightTimeS),
+  };
+  document.querySelectorAll(".tcell .tv").forEach(el=>{ el.innerHTML = tvals[el.dataset.f]; });
+}
+
+/* ── Moving map (drone-centred, north-up) ─────────────── */
+const MAP = { pxm: 0.5, baseLat: 57.6589, baseLon: 12.0103, trail: [], els: null };
+function renderMap(s, hdg){
+  const e = MAP.els || (MAP.els = { grid:$("mapGrid"), trail:$("mapTrail"), home:$("mapHome"), veh:$("mapVeh") });
+  const mLat = 111320, mLon = 111320*Math.cos(MAP.baseLat*Math.PI/180);
+  const wx = (s.lon-MAP.baseLon)*mLon, wy = (s.lat-MAP.baseLat)*mLat;   // world metres
+  // pan grid opposite to motion
+  const gx = (((-wx*MAP.pxm)%25)+25)%25, gy = (((wy*MAP.pxm)%25)+25)%25;
+  e.grid.setAttribute("transform", `translate(${gx-25},${gy-25})`);
+  // vehicle fixed at centre, rotated to heading
+  e.veh.setAttribute("transform", `translate(100,100) rotate(${hdg})`);
+  // home marker (clamped to edge if beyond range)
+  const b = s.homeBearingDeg*Math.PI/180;
+  let hx = Math.sin(b)*s.distHomeM*MAP.pxm, hy = -Math.cos(b)*s.distHomeM*MAP.pxm;
+  const r = Math.hypot(hx,hy), R = 86; if (r>R){ hx*=R/r; hy*=R/r; }
+  e.home.setAttribute("transform", `translate(${(100+hx).toFixed(1)},${(100+hy).toFixed(1)})`);
+  // breadcrumb trail
+  const last = MAP.trail[MAP.trail.length-1];
+  if (!last || Math.hypot(wx-last.x, wy-last.y) > 2){ MAP.trail.push({x:wx,y:wy}); if (MAP.trail.length>60) MAP.trail.shift(); }
+  e.trail.setAttribute("points", MAP.trail.map(p=>
+    `${(100+(p.x-wx)*MAP.pxm).toFixed(1)},${(100-(p.y-wy)*MAP.pxm).toFixed(1)}`).join(" "));
+}
+
+/* ── Swap camera feed ⇄ map (tap whichever is the PiP) ── */
+let mainIsCamera = true;
+const feedView = $("feedView"), mapView = $("mapView");
+function applyViewRoles(){
+  feedView.className = "view feed " + (mainIsCamera ? "as-main" : "as-pip");
+  mapView.className  = "view map "  + (mainIsCamera ? "as-pip"  : "as-main");
+}
+function swapViews(e){ if (e.currentTarget.classList.contains("as-pip")){ mainIsCamera = !mainIsCamera; applyViewRoles(); } }
+feedView.addEventListener("click", swapViews);
+mapView.addEventListener("click", swapViews);
+applyViewRoles();
+
+/* ─────────────────────────────────────────────────────────
+   FLIGHT SIMULATOR  ← delete this whole block when you wire
+   the real feed. Replace with:
+     const ws = new WebSocket("ws://localhost:8765/telemetry");
+     ws.onmessage = e => applyTelemetry(JSON.parse(e.data));
+   (matching the field names on the `t` object above).
+   ───────────────────────────────────────────────────────── */
+let last = performance.now(), phase = 0;
+function simStep(now){
+  const dt = Math.min(0.05, (now-last)/1000); last = now; phase += dt;
+
+  // gentle, plausible flight dynamics
+  t.armed = true; t.mode = "MISSION";
+  t.roll  = 18*Math.sin(phase*0.32) + 4*Math.sin(phase*1.7);
+  t.pitch = 5*Math.sin(phase*0.5) + 2;
+  t.headingDeg += (t.roll * 0.18) * dt * 6;     // turn rate follows bank
+  t.headingDeg = ((t.headingDeg%360)+360)%360;
+  const targetAlt = 120 + 30*Math.sin(phase*0.18);
+  t.vspeedMs = (targetAlt - t.altM)*0.4;
+  t.altM += t.vspeedMs*dt;
+  t.groundSpeedMs = 14 + 3*Math.sin(phase*0.4);
+  t.distHomeM = 180 + 120*Math.abs(Math.sin(phase*0.12));
+  t.homeBearingDeg = (200 + 30*Math.sin(phase*0.1) + 360)%360;
+  t.battPct = Math.max(0, t.battPct - dt*0.18);
+  t.battV = 22.2 + (t.battPct/100)*3.6;
+  t.linkPct = 96 + 3*Math.sin(phase*0.9);
+  t.lat = 57.6589 + Math.sin(phase*0.05)*0.0009;
+  t.lon = 12.0103 + Math.cos(phase*0.05)*0.0009;
+  t.flightTimeS += dt;
+
+  applyTelemetry(t);
+  requestAnimationFrame(simStep);
+}
+requestAnimationFrame(simStep);
+
+/* ─────────────────────────────────────────────────────────
+   CONTROLS  — these are the actions you'll forward to MAVSDK
+   (gimbal, camera, servo/gripper release) via your bridge.
+   ───────────────────────────────────────────────────────── */
+function log(msg){ /* swap for a real toast/event log later */ console.log("[GCS]", msg); }
+
+// Camera dropout
+const cam = $("cam");
+$("camToggle").addEventListener("click", ()=>{
+  const open = cam.classList.toggle("open");
+  $("camToggle").setAttribute("aria-expanded", open);
+});
+document.addEventListener("click", e=>{ if(!cam.contains(e.target)) cam.classList.remove("open"); });
+
+// segmented toggles
+function wireSeg(id, cb){
+  document.querySelectorAll(`#${id} button`).forEach(b=>{
+    b.addEventListener("click", ()=>{
+      document.querySelectorAll(`#${id} button`).forEach(x=>x.classList.remove("active"));
+      b.classList.add("active"); cb(b.dataset.v);
+    });
+  });
+}
+wireSeg("sensorSeg", v=>log("sensor → "+v));
+wireSeg("modeSeg",   v=>log("capture mode → "+v));
+
+// Settings dropdown
+const settings = $("settings");
+$("setToggle").addEventListener("click", ()=>{
+  const open = settings.classList.toggle("open");
+  $("setToggle").setAttribute("aria-expanded", open);
+});
+document.addEventListener("click", e=>{ if(!settings.contains(e.target)) settings.classList.remove("open"); });
+
+// Flight settings — forward these to MAVSDK params/commands when wiring the bridge:
+//   rthAlt   → RTL_RETURN_ALT param
+//   speed    → max horizontal speed param / preset
+//   posMode  → EKF position source (GNSS vs visual/optical)
+//   droneUse → free-flight vs tethered failsafe profile
+const cfg = { rthAlt: 120, speed: "normal", posMode: "gps", droneUse: "free" };
+$("rth").addEventListener("input", ()=>{ cfg.rthAlt = +$("rth").value; $("rthVal").textContent = cfg.rthAlt; log("RTH height "+cfg.rthAlt+" m"); });
+wireSeg("speedSeg", v=>{ cfg.speed = v;    log("speed → "+v); });
+wireSeg("posSeg",   v=>{ cfg.posMode = v;  log("position mode → "+v); });
+wireSeg("useSeg",   v=>{ cfg.droneUse = v; log("drone use → "+v); });
+
+// gimbal + zoom
+const tilt=$("tilt"), zoom=$("zoom");
+tilt.addEventListener("input", ()=>{ $("tiltVal").textContent = tilt.value; log("gimbal tilt "+tilt.value); });
+document.querySelectorAll("[data-tilt]").forEach(b=> b.addEventListener("click", ()=>{
+  tilt.value=b.dataset.tilt; $("tiltVal").textContent=b.dataset.tilt; log("gimbal tilt "+b.dataset.tilt);
+}));
+zoom.addEventListener("input", ()=>{ $("zoomVal").textContent=(zoom.value/10).toFixed(1); });
+
+// record + capture
+let recording=false, recT=0, recTimer=null;
+$("recBtn").addEventListener("click", ()=>{
+  recording=!recording;
+  $("recBtn").classList.toggle("recording", recording);
+  $("recind").classList.toggle("on", recording);
+  if(recording){ recT=0; recTimer=setInterval(()=>{ recT++; $("rectime").textContent=fmtTime(recT); },1000); log("REC start"); }
+  else { clearInterval(recTimer); log("REC stop"); }
+});
+$("capBtn").addEventListener("click", ()=>{ const f=$("flash"); f.classList.remove("go"); void f.offsetWidth; f.classList.add("go"); log("image captured"); });
+
+// DROP — stage 1: press-and-hold to arm · stage 2: quick tap to release
+const dropBtn=$("dropBtn"), dropLabel=$("dropLabel"), dropTimer=$("dropTimer"),
+      dropHold=$("dropHold"), payload=$("payload"), reloadBtn=$("reloadBtn"), flash=$("flash");
+const HOLD_MS = 1200;          // stage-1 hold duration to arm
+const ARM_WINDOW_MS = 5000;    // auto-disarm if drop not tapped
+let dropArmed=false, armWindow=null, holdTimer=null, holdRAF=null, suppressNextClick=false;
+
+function setDropIdle(){
+  dropArmed=false; dropBtn.className="drop-btn idle"; dropLabel.textContent="Hold to arm";
+  dropTimer.style.transition="none"; dropTimer.style.width="0%"; dropHold.style.width="0%";
+}
+function cancelHold(){ clearTimeout(holdTimer); cancelAnimationFrame(holdRAF); holdTimer=null; if(!dropArmed) dropHold.style.width="0%"; }
+function startHold(){
+  if(dropArmed || holdTimer) return;
+  const t0=performance.now();
+  (function step(now){
+    const p=Math.min(1,(now-t0)/HOLD_MS);
+    dropHold.style.width=(p*100)+"%";
+    if(p<1) holdRAF=requestAnimationFrame(step);
+  })(t0);
+  holdTimer=setTimeout(armDrop, HOLD_MS);
+}
+function armDrop(){
+  clearTimeout(holdTimer); cancelAnimationFrame(holdRAF); holdTimer=null;
+  dropArmed=true; dropBtn.className="drop-btn armed"; dropLabel.textContent="Drop";
+  dropHold.style.width="0%";
+  dropTimer.style.transition="none"; dropTimer.style.width="100%"; void dropTimer.offsetWidth;
+  dropTimer.style.transition=`width ${ARM_WINDOW_MS}ms linear`; dropTimer.style.width="0%";
+  clearTimeout(armWindow); armWindow=setTimeout(disarmDrop, ARM_WINDOW_MS);
+  suppressNextClick=true;   // swallow the click that ends the arming hold
+  log("drop armed");
+}
+function disarmDrop(){ clearTimeout(armWindow); setDropIdle(); log("drop disarmed (timeout)"); }
+function commitRelease(){
+  clearTimeout(armWindow); dropArmed=false;
+  payload.textContent="Released"; payload.className="payload released";
+  flash.classList.remove("go"); void flash.offsetWidth; flash.classList.add("go");
+  dropBtn.disabled=true; dropBtn.className="drop-btn"; dropLabel.textContent="Released";
+  dropTimer.style.width="0%"; dropHold.style.width="0%"; reloadBtn.style.display="block";
+  log("PAYLOAD RELEASED");   // ← fire servo / gripper actuator command to MAVSDK here
+}
+
+// stage 1 — press and hold to arm (fresh press while armed re-enables the release tap)
+dropBtn.addEventListener("pointerdown", e=>{
+  if(payload.classList.contains("released")) return;
+  if(!dropArmed){ e.preventDefault(); startHold(); }
+  else { suppressNextClick=false; }
+});
+["pointerup","pointerleave","pointercancel"].forEach(ev=>
+  dropBtn.addEventListener(ev, ()=>{ if(holdTimer && !dropArmed) cancelHold(); }));
+// stage 2 — quick tap to release
+dropBtn.addEventListener("click", ()=>{
+  if(suppressNextClick){ suppressNextClick=false; return; }
+  if(dropArmed) commitRelease();
+});
+
+reloadBtn.addEventListener("click", ()=>{
+  payload.textContent="Loaded"; payload.className="payload loaded";
+  dropBtn.disabled=false; reloadBtn.style.display="none"; setDropIdle(); log("payload reloaded");
+});
+
+// Telemetry pullout
+const telem = $("telem");
+$("telemToggle").addEventListener("click", ()=>{
+  const open = telem.classList.toggle("open");
+  $("telemToggle").setAttribute("aria-expanded", open);
+});
+
+/* ─────────────────────────────────────────────────────────
+   ANDROID / KIOSK BEHAVIOUR
+   - Installed as a PWA (Add to Home Screen) the manifest's
+     display:fullscreen + orientation:landscape already apply.
+   - As a fallback in a normal browser tab, browsers block
+     auto-fullscreen, so we request it on the first tap.
+   - Wake lock keeps the screen on during flight.
+   ───────────────────────────────────────────────────────── */
+let wakeLock = null;
+async function requestWake(){
+  try { if ("wakeLock" in navigator) wakeLock = await navigator.wakeLock.request("screen"); }
+  catch (e) { /* not granted / not supported */ }
+}
+document.addEventListener("visibilitychange", ()=>{ if (document.visibilityState === "visible") requestWake(); });
+requestWake();
+
+function goImmersive(){
+  const el = document.documentElement;
+  if (!document.fullscreenElement && el.requestFullscreen) el.requestFullscreen().catch(()=>{});
+  if (screen.orientation && screen.orientation.lock) screen.orientation.lock("landscape").catch(()=>{});
+}
+window.addEventListener("pointerdown", function once(){ goImmersive(); window.removeEventListener("pointerdown", once); }, { once:true });
+</script>
+</body>
+</html>
