@@ -292,6 +292,16 @@
   .toolbtn.off .dot { background: var(--muted); box-shadow: none; }
   .status { cursor: pointer; }
   .status.hidden { display: none; }
+  /* HUD off: hide centre instruments + the map picture-in-picture */
+  .hud-off .horizon-clip,
+  .hud-off .boresight,
+  .hud-off .rollscale,
+  .hud-off .hdg-tape,
+  .hud-off .hdg-box,
+  .hud-off .tape,
+  .hud-off .tape-cap,
+  .hud-off .vsi,
+  .hud-off .view.as-pip { display: none; }
   .btn {
     font-family: var(--disp); letter-spacing: 0.14em; text-transform: uppercase;
     background: var(--panel); color: var(--text);
@@ -557,6 +567,7 @@
   <!-- Right-side dropdowns: Camera + Settings -->
   <div class="toolstack">
   <button class="btn toolbtn" id="statusToggle" aria-pressed="true"><span>Mission box</span><span class="dot"></span></button>
+  <button class="btn toolbtn" id="hudToggle" aria-pressed="true"><span>HUD</span><span class="dot"></span></button>
   <div class="cam" id="cam">
     <button class="btn" id="camToggle" aria-expanded="false">
       <span>Camera</span><span class="chev">▼</span>
@@ -937,6 +948,15 @@ statusBox.addEventListener("click", ()=>{
   statusBox.classList.add("hidden");
   statusToggle.classList.add("off");
   statusToggle.setAttribute("aria-pressed", "false");
+});
+
+// HUD toggle — strips the centre instruments and the map for a clean view
+const stage = document.querySelector(".stage");
+const hudToggle = $("hudToggle");
+hudToggle.addEventListener("click", ()=>{
+  const off = stage.classList.toggle("hud-off");
+  hudToggle.classList.toggle("off", off);
+  hudToggle.setAttribute("aria-pressed", String(!off));
 });
 
 // gimbal + zoom
